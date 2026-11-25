@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Many Hands, One Proof</title>
+<style>
+:root{--bg:#f6f4ee;--fg:#1c1b19;--mute:#76726a;--edge:#b9b3a4;--ok:#1d6f5c;--bad:#c4372b;--hl:#b8860b;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0e1210;--fg:#e9e6dc;--mute:#8d9a92;--edge:#2c3a33;--ok:#4fd1a5;--bad:#ff6b5a;--hl:#f2c14e}}
+html,body{margin:0;background:var(--bg);color:var(--fg);font-family:Georgia,'Times New Roman',serif}
+main{max-width:640px;margin:0 auto;padding:20px 16px 40px;text-align:center}
+h1{font-weight:400;letter-spacing:.04em;margin:8px 0 2px;font-size:1.6rem}
+.sub{color:var(--mute);font-size:.9rem;margin:0 0 8px}
+svg{width:100%;height:auto;max-width:600px}
+.e{stroke:var(--edge);stroke-width:1}
+.n{fill:var(--ok)}
+.bad{fill:var(--bad);stroke:var(--bad)}
+.e.bad{stroke:var(--bad);stroke-width:1.5}
+.p{stroke:var(--hl);stroke-width:2.5}
+.n.p{fill:var(--hl)}
+.leaf{cursor:pointer}
+.root{fill:var(--bg);stroke:var(--ok);stroke-width:3}
+.root.bad{stroke:var(--bad)}
+code{font-family:ui-monospace,Menlo,monospace;font-size:.72rem;word-break:break-all;color:var(--mute)}
+#status{font-size:1rem;margin:6px 0;min-height:1.4em}
+button{font:inherit;background:none;color:var(--fg);border:1px solid var(--edge);padding:8px 16px;margin:4px;border-radius:999px;cursor:pointer}
+button:hover{border-color:var(--hl)}
+p.note{color:var(--mute);font-size:.85rem;line-height:1.5}
+</style></head>
+<body><main>
+<h1>Many Hands, One Proof</h1>
+<p class="sub">64 pieces of work fold into a single root anyone can check.</p>
+<svg id="art" viewBox="-300 -300 600 600" role="img" aria-label="Radial tree of 64 hashed work units merging pairwise into one root hash"></svg>
+<div id="status">Tap any outer dot to trace its proof to the root.</div>
+<code id="root"></code>
+<div>
+<button id="tamper">Tamper with one unit</button>
+<button id="restore">Restore</button>
+</div>
+<p class="note">Every hash on this page is a real SHA-256 computed in your browser. Change one unit and every ancestor up to the root changes, so false work cannot hide.</p>
+</main>
+<script>
+const N=64,L=6,R=270,enc=new TextEncoder();
+const orig=Array.from({length:N},(_,i)=>'work-unit-'+i);
+let data=orig.slice(),base=null,sel=-1,cur=null;
+async function h(s){const b=await crypto.subtle.digest('SHA-256',enc.encode(s));return[...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join('')}
+async function build(d){const lv=[await Promise.all(d.map(h))];
+ for(let k=1;k<=L;k++){const p=lv[k-1];lv.push(await Promise.all(Array.from({length:p.length/2},(_,i)=>h(p[2*i]+p[2*i+1]))))}
+ return lv}
+function pos(k,i){const s=1<<k,a=((i+.5)*s/N)*2*Math.PI-Math.PI/2,r=(L-k)*R/L;return[r*Math.cos(a),r*Math.sin(a)]}
+function draw(){
+ let e='',n='';
+ const pathSet=new Set();
+ if(sel>=0)for(let k=0;k<=L;k++)pathSet.add(k+'-'+(sel>>k));
+ for(let k=0;k<L;k++)for(let i=0;i<cur[k].length;i++){
+  const[a,b]=pos(k,i),[c,d]=pos(k+1,i>>1);
+  const bad=cur[k][i]!==base[k][i],p=pathSet.has(k+'-'+i);
+  e+=`<line class="e${bad?' bad':''}${p?' p':''}" x1="${a.toFixed(1)}" y1="${b.toFixed(1)}" x2="${c.toFixed(1)}" y2="${d.toFixed(1)}"/>`}
+ for(let k=0;k<L;k++)for(let i=0;i<cur[k].length;i++){
+  const[x,y]=pos(k,i),bad=cur[k][i]!==base[k][i],p=pathSet.has(k+'-'+i);
+  const r=k===0?4.5:2+k*.6;
+  n+=`<circle class="n${bad?' bad':''}${p?' p':''}${k===0?' leaf':''}" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${r}" ${k===0?`data-i="${i}"`:''}/>`
+  if(k===0)n+=`<circle class="leaf" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="11" fill="transparent" data-i="${i}"/>`}
+ const rb=cur[L][0]!==base[L][0];
+ n+=`<circle class="root${rb?' bad':''}" r="16"/>`;
+ art.innerHTML=e+n;
+ root.textContent='root: '+cur[L][0];
+ status.textContent=sel>=0?`Unit ${sel} traced through ${L} merges to the root.`+(rb?' The root no longer matches the honest root: tampering detected.':' Root matches: work verified.'):(rb?'Root mismatch: tampering detected.':'All 64 units verified against one root.')}
+art.addEventListener('click',ev=>{const t=ev.target.closest('[data-i]');if(t){sel=+t.dataset.i;draw()}});
+tamper.onclick=async()=>{const i=Math.floor(Math.random()*N);data=orig.slice();data[i]='forged-unit-'+i;cur=await build(data);sel=i;draw()};
+restore.onclick=async()=>{data=orig.slice();cur=base;sel=-1;draw()};
+(async()=>{base=await build(orig);cur=base;draw()})();
+</script></body></html>
